@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './Chat.css';
+import Notification from './Notification';
 
 const Chat = () => {
   const [messages, setMessages] = useState([]);
@@ -12,6 +13,7 @@ const Chat = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [currentRequestId, setCurrentRequestId] = useState('');
   const [currentChatId, setCurrentChatId] = useState(null);
+  const [notification, setNotification] = useState(null);
   const [chats, setChats] = useState([]);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -176,7 +178,6 @@ const Chat = () => {
     setIsLoading(true);
     setCurrentStreamingMessage('');
     
-    // Создаем новый AbortController для этого запроса
     abortControllerRef.current = new AbortController();
     const requestId = Date.now().toString();
     setCurrentRequestId(requestId);
@@ -199,6 +200,47 @@ const Chat = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
+      const contentType = response.headers.get('content-type');
+      
+      // Если это JSON - значит это результат выполнения команды
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        
+        switch (data.type) {
+          case 'notification':
+            // Показываем уведомление
+            setNotification({
+              message: data.content,
+              timestamp: new Date().toLocaleTimeString()
+            });
+            setTimeout(() => setNotification(null), 5000);
+            break;
+            
+          case 'script_result':
+            // Добавляем результат скрипта в чат
+            const scriptMessage = {
+              text: data.content,
+              sender: 'bot',
+              timestamp: new Date().toLocaleTimeString()
+            };
+            setMessages(prev => [...prev, scriptMessage]);
+            break;
+            
+          case 'error':
+            // Показываем ошибку в чате
+            const errorMessage = {
+              text: data.content,
+              sender: 'bot',
+              timestamp: new Date().toLocaleTimeString(),
+              isError: true
+            };
+            setMessages(prev => [...prev, errorMessage]);
+            break;
+        }
+        return;
+      }
+
+      // Если это не JSON - это обычный ответ от модели
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedText = '';
@@ -232,7 +274,8 @@ const Chat = () => {
       const errorMessage = {
         text: 'Извините, произошла ошибка. Попробуйте еще раз.',
         sender: 'bot',
-        timestamp: new Date().toLocaleTimeString()
+        timestamp: new Date().toLocaleTimeString(),
+        isError: true
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
@@ -259,6 +302,12 @@ const Chat = () => {
 
   return (
     <div className="chat-container">
+      {notification && (
+        <Notification 
+          message={notification.message} 
+          timestamp={notification.timestamp} 
+        />
+      )}
       <div className="chat-header">
         <h1>AI Chat Assistant</h1>
       </div>
