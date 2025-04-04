@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import './Chat.css';
 import Notification from './Notification';
 
+const API_URL = 'http://localhost:5000';
+
 const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -19,6 +21,8 @@ const Chat = () => {
   const inputRef = useRef(null);
   const editButtonRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const [editingTitle, setEditingTitle] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
 
   // Загрузка истории чатов при монтировании
   useEffect(() => {
@@ -27,7 +31,7 @@ const Chat = () => {
 
   const fetchChats = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/chats');
+      const response = await fetch(`${API_URL}/api/chats`);
       const data = await response.json();
       setChats(data);
       
@@ -56,10 +60,10 @@ const Chat = () => {
   }, []);
 
   const stopGeneration = async (e) => {
-    e.preventDefault(); // Предотвращаем перезагрузку страницы
+    e.preventDefault();
     if (currentRequestId) {
       try {
-        await fetch('http://localhost:5000/api/stop', {
+        await fetch(`${API_URL}/api/stop`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -75,7 +79,6 @@ const Chat = () => {
       abortControllerRef.current.abort();
     }
     
-    // Сохраняем текущее сообщение в истории
     if (currentStreamingMessage.trim()) {
       const botMessage = {
         text: currentStreamingMessage.trim(),
@@ -99,7 +102,6 @@ const Chat = () => {
       setEditingMessage(messageIndex);
       setIsEditing(true);
       
-      // Позиционируем кнопку редактирования
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       const button = editButtonRef.current;
@@ -123,7 +125,7 @@ const Chat = () => {
 
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:5000/api/edit', {
+      const response = await fetch(`${API_URL}/api/edit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -140,7 +142,6 @@ const Chat = () => {
 
       const data = await response.json();
       
-      // Обновляем сообщение с новым текстом
       setMessages(prev => prev.map((msg, index) => {
         if (index === editingMessage) {
           const newText = msg.text.replace(selectedText, data.response);
@@ -149,7 +150,6 @@ const Chat = () => {
         return msg;
       }));
 
-      // Сбрасываем состояние редактирования
       setSelectedText('');
       setEditPrompt('');
       setIsEditing(false);
@@ -183,7 +183,7 @@ const Chat = () => {
     setCurrentRequestId(requestId);
 
     try {
-      const response = await fetch('http://localhost:5000/api/chat', {
+      const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -202,13 +202,11 @@ const Chat = () => {
 
       const contentType = response.headers.get('content-type');
       
-      // Если это JSON - значит это результат выполнения команды
       if (contentType && contentType.includes('application/json')) {
         const data = await response.json();
         
         switch (data.type) {
           case 'notification':
-            // Показываем уведомление
             setNotification({
               message: data.content,
               timestamp: new Date().toLocaleTimeString()
@@ -217,7 +215,6 @@ const Chat = () => {
             break;
             
           case 'script_result':
-            // Добавляем результат скрипта в чат
             const scriptMessage = {
               text: data.content,
               sender: 'bot',
@@ -227,7 +224,6 @@ const Chat = () => {
             break;
             
           case 'error':
-            // Показываем ошибку в чате
             const errorMessage = {
               text: data.content,
               sender: 'bot',
@@ -240,7 +236,6 @@ const Chat = () => {
         return;
       }
 
-      // Если это не JSON - это обычный ответ от модели
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedText = '';
@@ -263,7 +258,6 @@ const Chat = () => {
       setMessages(prev => [...prev, botMessage]);
       setCurrentStreamingMessage('');
       
-      // Обновляем список чатов после каждого сообщения
       fetchChats();
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -288,7 +282,6 @@ const Chat = () => {
   };
 
   const handleKeyDown = (e) => {
-    // Отправка сообщения по Enter (Shift+Enter для новой строки)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -297,7 +290,7 @@ const Chat = () => {
 
   const createNewChat = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/chats', {
+      const response = await fetch(`${API_URL}/api/chats`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -317,6 +310,41 @@ const Chat = () => {
     setMessages(chat.messages || []);
   };
 
+  const handleTitleDoubleClick = (chat) => {
+    setEditingTitle(chat.id);
+    setEditTitle(chat.title);
+  };
+  
+  const handleTitleSave = async (chatId) => {
+    try {
+      const response = await fetch(`${API_URL}/api/chats/${chatId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: editTitle }),
+      });
+      
+      if (response.ok) {
+        const updatedChat = await response.json();
+        setChats(chats.map(chat => 
+          chat.id === chatId ? { ...chat, title: updatedChat.title } : chat
+        ));
+      }
+    } catch (error) {
+      console.error('Error updating chat title:', error);
+    }
+    setEditingTitle(null);
+  };
+  
+  const handleTitleKeyPress = (e, chatId) => {
+    if (e.key === 'Enter') {
+      handleTitleSave(chatId);
+    } else if (e.key === 'Escape') {
+      setEditingTitle(null);
+    }
+  };
+
   return (
     <div className="chat-app">
       <div className="chat-sidebar">
@@ -330,7 +358,24 @@ const Chat = () => {
               className={`chat-item ${currentChatId === chat.id ? 'active' : ''}`}
               onClick={() => handleSelectChat(chat)}
             >
-              <div className="chat-title">{chat.title}</div>
+              {editingTitle === chat.id ? (
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onBlur={() => handleTitleSave(chat.id)}
+                  onKeyDown={(e) => handleTitleKeyPress(e, chat.id)}
+                  autoFocus
+                  className="chat-title-input"
+                />
+              ) : (
+                <div 
+                  className="chat-title" 
+                  onDoubleClick={() => handleTitleDoubleClick(chat)}
+                >
+                  {chat.title || 'Новый чат'}
+                </div>
+              )}
               <div className="chat-date">
                 {new Date(chat.created_at).toLocaleDateString()}
               </div>
@@ -403,4 +448,4 @@ const Chat = () => {
   );
 };
 
-export default Chat; 
+export default Chat;

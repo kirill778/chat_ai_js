@@ -51,9 +51,27 @@
 }
 
 .chat-title {
-  font-weight: 500;
-  margin-bottom: 4px;
-  color: #333;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.chat-title-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #4a9eff;
+  color: inherit;
+  font-size: inherit;
+  padding: 2px 4px;
+  outline: none;
+  width: calc(100% - 8px);
+}
+
+.chat-title-input:focus {
+  background: rgba(74, 158, 255, 0.1);
 }
 
 .chat-date {
