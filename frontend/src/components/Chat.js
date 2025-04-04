@@ -172,6 +172,12 @@ const Chat = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLoading) {
+      // Если идет генерация, останавливаем её
+      await stopGeneration(e);
+      return;
+    }
+
     if (!inputMessage.trim()) return;
 
     const userMessage = {
@@ -470,7 +476,7 @@ const Chat = () => {
             placeholder="Введите сообщение..."
             disabled={isLoading}
           />
-          <button type="submit" disabled={isLoading}>
+          <button type="submit">
             {isLoading ? 'Остановить' : 'Отправить'}
           </button>
         </form>
