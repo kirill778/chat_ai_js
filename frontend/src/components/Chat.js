@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './Chat.css';
 import Notification from './Notification';
+import TextEditor from './TextEditor';
 
 const API_URL = 'http://localhost:5000';
 
@@ -32,6 +33,7 @@ const Chat = () => {
   const [editTitle, setEditTitle] = useState('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [showTextEditor, setShowTextEditor] = useState(false);
 
   // Загрузка истории чатов при монтировании
   useEffect(() => {
@@ -238,6 +240,17 @@ const Chat = () => {
             setTimeout(() => setNotification(null), 5000);
             break;
             
+          case 'write_letter':
+            setShowTextEditor(true);
+            const botMessage = {
+              text: data.content,
+              sender: 'bot',
+              timestamp: new Date().toISOString(),
+              id: Date.now()
+            };
+            setMessages(prev => [...prev, botMessage]);
+            break;
+            
           case 'script_result':
             const scriptMessage = {
               text: data.content,
@@ -259,6 +272,7 @@ const Chat = () => {
             setMessages(prev => [...prev, errorMessage]);
             break;
         }
+        setIsLoading(false);
         return;
       }
 
@@ -436,6 +450,34 @@ const Chat = () => {
     }
   };
 
+  // Обработчик команды написания письма
+  const handleWriteLetter = () => {
+    setShowTextEditor(true);
+  };
+
+  // Обработчик сохранения письма
+  const handleSaveLetter = (text) => {
+    // Устанавливаем текст в поле ввода и вызываем отправку
+    setInputMessage(text);
+    // Создаем событие для вызова handleSubmit
+    const event = new Event('submit', {
+      bubbles: true,
+      cancelable: true,
+    });
+    setTimeout(() => {
+      handleSubmit(event);
+      setShowTextEditor(false);
+    }, 0);
+  };
+
+  // Обработчик команд
+  const handleCommand = (command) => {
+    if (command === 'write_letter') {
+      handleWriteLetter();
+    }
+    // ... обработка других команд ...
+  };
+
   return (
     <div className="chat-app">
       <div className="chat-sidebar">
@@ -572,6 +614,12 @@ const Chat = () => {
           </div>
         </div>
       )}
+
+      <TextEditor 
+        isOpen={showTextEditor}
+        onClose={() => setShowTextEditor(false)}
+        onSave={handleSaveLetter}
+      />
     </div>
   );
 };

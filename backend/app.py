@@ -41,12 +41,18 @@ def execute_command(command: Command, args: Optional[str] = None) -> str:
             })
         elif command.action_type == "script":
             # Для скриптов выполняем код Python
-            local_vars = {"args": args}
-            exec(command.action_data, {}, local_vars)
-            return json.dumps({
-                "type": "script_result",
-                "content": local_vars.get("result", "Скрипт выполнен успешно")
-            })
+            if command.trigger.lower() == "помоги написать письмо":
+                return json.dumps({
+                    "type": "write_letter",
+                    "content": "Открываю редактор для написания письма"
+                })
+            else:
+                local_vars = {"args": args}
+                exec(command.action_data, globals(), local_vars)
+                return json.dumps({
+                    "type": "script_result",
+                    "content": local_vars.get("result", "Скрипт выполнен успешно")
+                })
         else:
             return json.dumps({
                 "type": "error",
@@ -64,7 +70,9 @@ def check_for_commands(message: str) -> tuple[bool, Optional[str], Optional[str]
     commands = db.query(Command).filter(Command.is_active == True).all()
     
     for command in commands:
-        if message.lower().startswith(command.trigger.lower()):
+        if message.lower() == command.trigger.lower():
+            return True, command.trigger, None
+        elif message.lower().startswith(command.trigger.lower()):
             args = message[len(command.trigger):].strip()
             return True, command.trigger, args
     
@@ -465,6 +473,120 @@ def update_system_prompt():
     
     SYSTEM_PROMPT = data['prompt']
     return jsonify({'success': True})
+
+@app.route('/api/init-commands', methods=['POST'])
+def init_commands():
+    """Инициализация команд в базе данных"""
+    db = next(get_db())
+    
+    # Список команд для инициализации
+    commands = [
+        Command(
+            trigger="help",
+            description="Показать список доступных команд",
+            action_type="script",
+            action_data="result = 'Доступные команды:\\n' + '\\n'.join([f'- {cmd.trigger}: {cmd.description}' for cmd in db.query(Command).all()])",
+            is_active=True
+        ),
+        Command(
+            trigger="Помоги написать письмо",
+            description="Открывает редактор для написания письма",
+            action_type="script",
+            action_data="result = 'Открываю редактор для написания письма'",
+            is_active=True
+        )
+    ]
+    
+    # Удаляем старые команды и добавляем новые
+    db.query(Command).delete()
+    for command in commands:
+        db.add(command)
+    db.commit()
+    
+    return jsonify({"status": "success"})
+
+@app.route('/api/generate-letter', methods=['POST'])
+def generate_letter():
+    """Генерация письма с помощью модели"""
+    data = request.get_json()
+    letter_type = data.get('type', 'business')
+    content = data.get('content', '')
+
+    # Формируем промпт для генерации письма
+    letter_prompts = {
+        'business': """Напиши деловое письмо, используя следующие требования:
+1. Официальный стиль
+2. Четкая структура
+3. Профессиональная лексика
+4. Вежливое обращение и заключение
+
+Контекст или описание: {content}""",
+
+        'personal': """Напиши личное письмо, используя следующие требования:
+1. Дружелюбный тон
+2. Неформальный стиль
+3. Эмоциональность
+4. Личные детали и воспоминания
+
+Контекст или описание: {content}""",
+
+        'complaint': """Напиши письмо-жалобу, используя следующие требования:
+1. Конструктивный тон
+2. Четкое описание проблемы
+3. Конкретные факты
+4. Ясные требования или просьбы
+
+Контекст или описание: {content}""",
+
+        'gratitude': """Напиши благодарственное письмо, используя следующие требования:
+1. Искренний тон
+2. Конкретные причины благодарности
+3. Теплые пожелания
+4. Выражение признательности
+
+Контекст или описание: {content}""",
+
+        'invitation': """Напиши письмо-приглашение, используя следующие требования:
+1. Приветливый тон
+2. Четкие детали мероприятия
+3. Информация о времени и месте
+4. RSVP (просьба ответить)
+
+Контекст или описание: {content}"""
+    }
+
+    prompt = letter_prompts.get(letter_type, letter_prompts['business']).format(content=content)
+
+    try:
+        # Отправляем запрос к модели
+        response = requests.post(
+            OLLAMA_API_URL,
+            json={
+                "model": MODEL_NAME,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "num_predict": 2048
+                }
+            }
+        )
+        
+        result = response.json()
+        generated_text = result.get('response', '')
+        
+        return jsonify({
+            'text': generated_text,
+            'status': 'success'
+        })
+        
+    except Exception as e:
+        print(f"Error generating letter: {e}")
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
 
 # Запускаем сервер для разработки
 if __name__ == '__main__':
