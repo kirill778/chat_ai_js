@@ -30,10 +30,13 @@ const Chat = () => {
   const abortControllerRef = useRef(null);
   const [editingTitle, setEditingTitle] = useState(null);
   const [editTitle, setEditTitle] = useState('');
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState('');
 
   // Загрузка истории чатов при монтировании
   useEffect(() => {
     fetchChats();
+    fetchSystemPrompt();
   }, []);
 
   const fetchChats = async () => {
@@ -406,6 +409,33 @@ const Chat = () => {
     }
   };
 
+  // Функция для получения системного промпта
+  const fetchSystemPrompt = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/system-prompt');
+      const data = await response.json();
+      setSystemPrompt(data.prompt);
+    } catch (error) {
+      console.error('Error fetching system prompt:', error);
+    }
+  };
+
+  // Функция для сохранения системного промпта
+  const saveSystemPrompt = async () => {
+    try {
+      await fetch('http://localhost:5000/api/system-prompt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: systemPrompt }),
+      });
+      setShowSettingsModal(false);
+    } catch (error) {
+      console.error('Error saving system prompt:', error);
+    }
+  };
+
   return (
     <div className="chat-app">
       <div className="chat-sidebar">
@@ -451,6 +481,15 @@ const Chat = () => {
               </button>
             </div>
           ))}
+        </div>
+        <div className="sidebar-footer">
+          <button 
+            className="settings-button"
+            onClick={() => setShowSettingsModal(true)}
+            title="Настройки системного промпта"
+          >
+            ⚙️ Настройки промпта
+          </button>
         </div>
       </div>
       <div className="chat-container">
@@ -514,6 +553,25 @@ const Chat = () => {
       >
         Редактировать
       </button>
+
+      {/* Модальное окно настроек */}
+      {showSettingsModal && (
+        <div className="settings-modal">
+          <div className="settings-modal-content">
+            <h2>Настройки системного промпта</h2>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={15}
+              className="system-prompt-textarea"
+            />
+            <div className="settings-modal-buttons">
+              <button onClick={() => setShowSettingsModal(false)}>Отмена</button>
+              <button onClick={saveSystemPrompt}>Сохранить</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

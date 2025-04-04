@@ -24,6 +24,26 @@ MODEL_NAME = "gemma3:12b"
 # Словарь для хранения активных запросов
 active_requests = {}
 
+# Глобальная переменная для хранения системного промпта
+SYSTEM_PROMPT = """Ты — большая языковая модель, ассистент в чате. 
+
+ВАЖНО О РАБОТЕ С КОНТЕКСТОМ:
+1. В начале КАЖДОГО ответа ты ДОЛЖЕН просмотреть ВСЮ историю сообщений.
+2. Если пользователь когда-либо представился или назвал своё имя, ты ДОЛЖЕН использовать это имя в общении.
+3. Поиск имени: проверь все сообщения пользователя на фразы типа:
+   - "меня зовут [имя]"
+   - "я [имя]"
+   - "[имя] - запомни"
+   и подобные варианты.
+4. Если имя найдено - ВСЕГДА обращайся к пользователю по имени.
+5. Если имя не найдено - вежливо сообщи об этом.
+
+ДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА:
+1. Поддерживай последовательный контекст беседы
+2. Используй информацию из предыдущих сообщений
+3. Отвечай последовательно и логично
+4. Будь вежливым и дружелюбным"""
+
 def execute_command(command: Command, args: Optional[str] = None) -> str:
     """Выполняет команду в зависимости от её типа."""
     if not command.is_active:
@@ -129,24 +149,35 @@ def chat():
     
     def generate_stream():
         try:
-            # Получаем историю сообщений для текущего чата
+            # Получаем всю историю сообщений для текущего чата
             chat_messages = db.query(Message).filter(
                 Message.chat_id == chat.id
             ).order_by(Message.timestamp.asc()).all()
             
-            # Формируем контекст из предыдущих сообщений
+            # Формируем контекст из всех предыдущих сообщений
             conversation = []
+            
+            # Добавляем системное сообщение для лучшего контекста
+            system_message = {
+                "role": "system",
+                "content": SYSTEM_PROMPT  # Используем глобальную переменную
+            }
+            conversation.append(system_message)
+            
+            # Добавляем всю историю сообщений
             for msg in chat_messages:
                 role = "user" if msg.sender == "user" else "assistant"
                 conversation.append({"role": role, "content": msg.text})
             
+            # Отправляем запрос к модели с полным контекстом
             response = requests.post(
                 OLLAMA_API_URL,
                 json={
                     "model": MODEL_NAME,
                     "prompt": message,
                     "stream": True,
-                    "messages": conversation
+                    "messages": conversation,
+                    "context_window": 4096  # Увеличиваем окно контекста
                 },
                 stream=True
             )
@@ -431,6 +462,22 @@ def delete_chat(chat_id):
     except Exception as e:
         print(f"Error deleting chat: {str(e)}")
         return jsonify({'error': str(e)}), 400
+
+@app.route('/api/system-prompt', methods=['GET'])
+def get_system_prompt():
+    """Получить текущий системный промпт"""
+    return jsonify({'prompt': SYSTEM_PROMPT})
+
+@app.route('/api/system-prompt', methods=['POST'])
+def update_system_prompt():
+    """Обновить системный промпт"""
+    global SYSTEM_PROMPT
+    data = request.get_json()
+    if 'prompt' not in data:
+        return jsonify({'error': 'No prompt provided'}), 400
+    
+    SYSTEM_PROMPT = data['prompt']
+    return jsonify({'success': True})
 
 # Запускаем сервер для разработки
 if __name__ == '__main__':
