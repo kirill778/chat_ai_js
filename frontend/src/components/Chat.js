@@ -295,104 +295,110 @@ const Chat = () => {
     }
   };
 
+  const createNewChat = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/chats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      const newChat = await response.json();
+      setChats(prev => [newChat, ...prev]);
+      setCurrentChatId(newChat.id);
+      setMessages([]);
+    } catch (error) {
+      console.error('Error creating new chat:', error);
+    }
+  };
+
   const handleSelectChat = (chat) => {
     setCurrentChatId(chat.id);
-    setMessages(chat.messages);
+    setMessages(chat.messages || []);
   };
 
   return (
-    <div className="chat-container">
-      {notification && (
-        <Notification 
-          message={notification.message} 
-          timestamp={notification.timestamp} 
-        />
-      )}
-      <div className="chat-header">
-        <h1>AI Chat Assistant</h1>
-      </div>
-      <div className="messages-container">
-        {messages.length === 0 && (
-          <div className="welcome-message">
-            <p>Добро пожаловать в AI Chat Assistant!</p>
-            <p>Задайте любой вопрос, и я постараюсь помочь.</p>
-          </div>
-        )}
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`message ${message.sender === 'user' ? 'user-message' : 'bot-message'}`}
-          >
+    <div className="chat-app">
+      <div className="chat-sidebar">
+        <button className="new-chat-button" onClick={createNewChat}>
+          + Новый чат
+        </button>
+        <div className="chat-list">
+          {chats.map(chat => (
             <div 
-              className="message-content"
-              onMouseUp={(e) => handleTextSelection(e, index)}
+              key={chat.id} 
+              className={`chat-item ${currentChatId === chat.id ? 'active' : ''}`}
+              onClick={() => handleSelectChat(chat)}
             >
-              <p>{message.text}</p>
-              <span className="timestamp">{message.timestamp}</span>
-            </div>
-          </div>
-        ))}
-        {currentStreamingMessage && (
-          <div className="message bot-message streaming">
-            <div className="message-content">
-              <p>{currentStreamingMessage.trim()}</p>
-              <span className="timestamp">Генерация ответа...</span>
-            </div>
-          </div>
-        )}
-        {isLoading && !currentStreamingMessage && (
-          <div className="message bot-message">
-            <div className="message-content">
-              <div className="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
+              <div className="chat-title">{chat.title}</div>
+              <div className="chat-date">
+                {new Date(chat.created_at).toLocaleDateString()}
               </div>
             </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+          ))}
+        </div>
       </div>
-      {isEditing && (
-        <div className="edit-form">
+      <div className="chat-container">
+        <div className="messages">
+          {messages.map((message, index) => (
+            <div 
+              key={index} 
+              className={`message ${message.sender}`}
+              onMouseUp={(e) => handleTextSelection(e, index)}
+            >
+              <div className="message-content">
+                {message.text}
+              </div>
+              <div className="message-timestamp">
+                {message.timestamp}
+              </div>
+            </div>
+          ))}
+          {isLoading && (
+            <div className="message bot">
+              <div className="message-content">
+                {currentStreamingMessage}
+                <span className="typing-indicator">▋</span>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+        {isEditing && (
+          <form className="edit-form" onSubmit={handleEditSubmit}>
+            <input
+              type="text"
+              value={editPrompt}
+              onChange={(e) => setEditPrompt(e.target.value)}
+              placeholder="Введите инструкцию для редактирования"
+            />
+            <button type="submit">Применить</button>
+          </form>
+        )}
+        <form className="input-form" onSubmit={handleSubmit}>
           <input
+            ref={inputRef}
             type="text"
-            value={editPrompt}
-            onChange={(e) => setEditPrompt(e.target.value)}
-            placeholder="Опишите, как изменить выбранный текст..."
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Введите сообщение..."
             disabled={isLoading}
           />
-          <button onClick={handleEditSubmit} disabled={isLoading}>
-            Изменить
-          </button>
-        </div>
-      )}
-      <form onSubmit={handleSubmit} className="input-form">
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputMessage}
-          onChange={(e) => setInputMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Введите сообщение... (Enter для отправки)"
-          disabled={isLoading}
-        />
-        <div className="button-group">
-          {isLoading && (
-            <button 
-              type="button" 
-              onClick={stopGeneration} 
-              className="stop-button"
-              disabled={!isLoading}
-            >
-              Стоп
-            </button>
-          )}
           <button type="submit" disabled={isLoading}>
-            Отправить
+            {isLoading ? 'Остановить' : 'Отправить'}
           </button>
-        </div>
-      </form>
+        </form>
+      </div>
+      {notification && <Notification {...notification} />}
+      <button 
+        ref={editButtonRef} 
+        className="edit-button"
+        style={{ display: 'none' }}
+        onClick={() => setIsEditing(true)}
+      >
+        Редактировать
+      </button>
     </div>
   );
 };
