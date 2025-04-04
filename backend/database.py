@@ -11,6 +11,7 @@ class Chat(Base):
     __tablename__ = 'chats'
     
     id = Column(Integer, primary_key=True)
+    title = Column(Text, default='Новый чат')
     created_at = Column(DateTime, default=datetime.utcnow)
     messages = relationship("Message", back_populates="chat")
 

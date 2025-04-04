@@ -225,26 +225,33 @@ def edit():
 # Добавим новый эндпоинт для получения истории чатов
 @app.route('/api/chats', methods=['GET'])
 def get_chats():
-    db = next(get_db())
-    chats = db.query(Chat).all()
-    
-    chat_list = []
-    for chat in chats:
-        messages = []
-        for message in chat.messages:
-            messages.append({
-                'id': message.id,
-                'text': message.text,
-                'sender': message.sender,
-                'timestamp': message.timestamp.isoformat()
-            })
-        chat_list.append({
-            'id': chat.id,
-            'created_at': chat.created_at.isoformat(),
-            'messages': messages
-        })
-    
-    return jsonify(chat_list)
+    try:
+        db = next(get_db())
+        chats = db.query(Chat).all()
+        
+        chat_list = []
+        for chat in chats:
+            messages = []
+            for message in chat.messages:
+                messages.append({
+                    'id': message.id,
+                    'text': message.text,
+                    'sender': message.sender,
+                    'timestamp': message.timestamp.isoformat()
+                })
+            chat_data = {
+                'id': chat.id,
+                'title': chat.title,
+                'created_at': chat.created_at.isoformat(),
+                'messages': messages
+            }
+            print(f"Chat data: {chat_data}")
+            chat_list.append(chat_data)
+        
+        return jsonify(chat_list)
+    except Exception as e:
+        print(f"Error getting chats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 # API для управления командами
 @app.route('/api/commands', methods=['GET'])
@@ -342,6 +349,27 @@ def delete_command(command_id):
         return jsonify({'message': 'Command deleted successfully'})
     except Exception as e:
         db.rollback()
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/chats', methods=['POST'])
+def create_chat():
+    try:
+        db = next(get_db())
+        data = request.get_json(force=True, silent=True) or {}
+        title = data.get('title', 'Новый чат')
+        
+        chat = Chat(title=title)
+        db.add(chat)
+        db.commit()
+        
+        return jsonify({
+            'id': chat.id,
+            'title': chat.title,
+            'created_at': chat.created_at.isoformat(),
+            'messages': []
+        })
+    except Exception as e:
+        print(f"Error creating chat: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
 # Запускаем сервер для разработки
