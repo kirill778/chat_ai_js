@@ -170,6 +170,12 @@ const Chat = () => {
     }
   };
 
+  // Добавляем функцию форматирования времени
+  const formatMessageTime = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isLoading) {
@@ -179,10 +185,12 @@ const Chat = () => {
 
     if (!inputMessage.trim()) return;
 
+    const timestamp = new Date().toISOString();
     const userMessage = {
       text: inputMessage,
       sender: 'user',
-      timestamp: new Date().toLocaleTimeString()
+      timestamp: timestamp,
+      id: Date.now()
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -203,7 +211,8 @@ const Chat = () => {
         body: JSON.stringify({ 
           message: inputMessage,
           request_id: requestId,
-          chat_id: currentChatId
+          chat_id: currentChatId,
+          timestamp: timestamp
         }),
         signal: abortControllerRef.current.signal
       });
@@ -221,7 +230,7 @@ const Chat = () => {
           case 'notification':
             setNotification({
               message: data.content,
-              timestamp: new Date().toLocaleTimeString()
+              timestamp: new Date().toISOString()
             });
             setTimeout(() => setNotification(null), 5000);
             break;
@@ -230,7 +239,8 @@ const Chat = () => {
             const scriptMessage = {
               text: data.content,
               sender: 'bot',
-              timestamp: new Date().toLocaleTimeString()
+              timestamp: new Date().toISOString(),
+              id: Date.now()
             };
             setMessages(prev => [...prev, scriptMessage]);
             break;
@@ -239,7 +249,8 @@ const Chat = () => {
             const errorMessage = {
               text: data.content,
               sender: 'bot',
-              timestamp: new Date().toLocaleTimeString(),
+              timestamp: new Date().toISOString(),
+              id: Date.now(),
               isError: true
             };
             setMessages(prev => [...prev, errorMessage]);
@@ -261,16 +272,19 @@ const Chat = () => {
         setCurrentStreamingMessage(accumulatedText);
       }
 
-      const botMessage = {
-        text: accumulatedText.trim(),
-        sender: 'bot',
-        timestamp: new Date().toLocaleTimeString()
-      };
-
-      setMessages(prev => [...prev, botMessage]);
-      setCurrentStreamingMessage('');
+      if (accumulatedText.trim()) {
+        const botMessage = {
+          text: accumulatedText.trim(),
+          sender: 'bot',
+          timestamp: new Date().toISOString(),
+          id: Date.now()
+        };
+        setMessages(prev => [...prev, botMessage]);
+      }
       
-      fetchChats();
+      setCurrentStreamingMessage('');
+      await fetchChats(); // Обновляем список чатов после получения ответа
+      
     } catch (error) {
       if (error.name === 'AbortError') {
         console.log('Request was aborted');
@@ -280,7 +294,8 @@ const Chat = () => {
       const errorMessage = {
         text: 'Извините, произошла ошибка. Попробуйте еще раз.',
         sender: 'bot',
-        timestamp: new Date().toLocaleTimeString(),
+        timestamp: new Date().toISOString(),
+        id: Date.now(),
         isError: true
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -319,7 +334,17 @@ const Chat = () => {
 
   const handleSelectChat = (chat) => {
     setCurrentChatId(chat.id);
-    setMessages(chat.messages || []);
+    // Сортируем сообщения по timestamp
+    if (chat.messages && chat.messages.length > 0) {
+        const sortedMessages = [...chat.messages].sort((a, b) => {
+            const timeA = new Date(a.timestamp).getTime();
+            const timeB = new Date(b.timestamp).getTime();
+            return timeA - timeB;
+        });
+        setMessages(sortedMessages);
+    } else {
+        setMessages([]);
+    }
   };
 
   const handleTitleDoubleClick = (chat) => {
@@ -432,7 +457,7 @@ const Chat = () => {
         <div className="messages">
           {messages.map((message, index) => (
             <div 
-              key={index} 
+              key={`${message.id || index}-${message.timestamp}`}
               className={`message ${message.sender}`}
               onMouseUp={(e) => handleTextSelection(e, index)}
             >
@@ -440,7 +465,7 @@ const Chat = () => {
                 {message.text}
               </div>
               <div className="message-timestamp">
-                {message.timestamp}
+                {formatMessageTime(message.timestamp)}
               </div>
             </div>
           ))}

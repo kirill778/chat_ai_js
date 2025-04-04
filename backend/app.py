@@ -5,7 +5,7 @@ import requests
 import json
 import threading
 from database import get_db, Chat, Message, Command
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 from typing import Optional
 import subprocess
@@ -73,6 +73,7 @@ def chat():
     message = data.get('message')
     request_id = data.get('request_id')
     chat_id = data.get('chat_id')
+    timestamp = data.get('timestamp') or datetime.utcnow().isoformat()
     
     if not message:
         return jsonify({'error': 'No message provided'}), 400
@@ -92,12 +93,12 @@ def chat():
         db.add(chat)
         db.commit()
     
-    # Сохраняем сообщение пользователя
+    # Сохраняем сообщение пользователя с переданным timestamp
     user_message = Message(
         chat_id=chat.id,
         text=message,
         sender='user',
-        timestamp=datetime.utcnow()
+        timestamp=datetime.fromisoformat(timestamp)
     )
     db.add(user_message)
     db.commit()
@@ -118,7 +119,6 @@ def chat():
             db.add(bot_message)
             db.commit()
             
-            # Возвращаем результат с правильным Content-Type
             return Response(
                 result,
                 content_type='application/json'
@@ -129,12 +129,24 @@ def chat():
     
     def generate_stream():
         try:
+            # Получаем историю сообщений для текущего чата
+            chat_messages = db.query(Message).filter(
+                Message.chat_id == chat.id
+            ).order_by(Message.timestamp.asc()).all()
+            
+            # Формируем контекст из предыдущих сообщений
+            conversation = []
+            for msg in chat_messages:
+                role = "user" if msg.sender == "user" else "assistant"
+                conversation.append({"role": role, "content": msg.text})
+            
             response = requests.post(
                 OLLAMA_API_URL,
                 json={
                     "model": MODEL_NAME,
                     "prompt": message,
-                    "stream": True
+                    "stream": True,
+                    "messages": conversation
                 },
                 stream=True
             )
@@ -148,19 +160,22 @@ def chat():
                         accumulated_text += chunk
                         yield chunk
                         
-            # Сохраняем ответ бота
+            # Сохраняем ответ бота с timestamp через секунду после сообщения пользователя
             if accumulated_text:
+                bot_timestamp = (datetime.fromisoformat(timestamp) + 
+                               timedelta(seconds=1)).isoformat()
                 bot_message = Message(
                     chat_id=chat.id,
                     text=accumulated_text,
                     sender='bot',
-                    timestamp=datetime.utcnow()
+                    timestamp=datetime.fromisoformat(bot_timestamp)
                 )
                 db.add(bot_message)
                 db.commit()
                 
         except Exception as e:
             print(f"Error: {e}")
+            yield f"Error: {str(e)}"
             
         finally:
             if request_id in active_requests:
@@ -231,21 +246,26 @@ def get_chats():
         
         chat_list = []
         for chat in chats:
-            messages = []
-            for message in chat.messages:
-                messages.append({
+            # Получаем сообщения, сортируя их по timestamp
+            messages = db.query(Message).filter(
+                Message.chat_id == chat.id
+            ).order_by(Message.timestamp.asc()).all()
+            
+            messages_list = []
+            for message in messages:
+                messages_list.append({
                     'id': message.id,
                     'text': message.text,
                     'sender': message.sender,
                     'timestamp': message.timestamp.isoformat()
                 })
+            
             chat_data = {
                 'id': chat.id,
                 'title': chat.title,
                 'created_at': chat.created_at.isoformat(),
-                'messages': messages
+                'messages': messages_list
             }
-            print(f"Chat data: {chat_data}")
             chat_list.append(chat_data)
         
         return jsonify(chat_list)
