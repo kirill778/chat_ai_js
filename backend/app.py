@@ -25,24 +25,7 @@ MODEL_NAME = "gemma3:12b"
 active_requests = {}
 
 # Глобальная переменная для хранения системного промпта
-SYSTEM_PROMPT = """Ты — большая языковая модель, ассистент в чате. 
-
-ВАЖНО О РАБОТЕ С КОНТЕКСТОМ:
-1. В начале КАЖДОГО ответа ты ДОЛЖЕН просмотреть ВСЮ историю сообщений.
-2. Если пользователь когда-либо представился или назвал своё имя, ты ДОЛЖЕН использовать это имя в общении.
-3. Поиск имени: проверь все сообщения пользователя на фразы типа:
-   - "меня зовут [имя]"
-   - "я [имя]"
-   - "[имя] - запомни"
-   и подобные варианты.
-4. Если имя найдено - ВСЕГДА обращайся к пользователю по имени.
-5. Если имя не найдено - вежливо сообщи об этом.
-
-ДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА:
-1. Поддерживай последовательный контекст беседы
-2. Используй информацию из предыдущих сообщений
-3. Отвечай последовательно и логично
-4. Будь вежливым и дружелюбным"""
+SYSTEM_PROMPT = """"""
 
 def execute_command(command: Command, args: Optional[str] = None) -> str:
     """Выполняет команду в зависимости от её типа."""
@@ -154,30 +137,30 @@ def chat():
                 Message.chat_id == chat.id
             ).order_by(Message.timestamp.asc()).all()
             
-            # Формируем контекст из всех предыдущих сообщений
-            conversation = []
+            # Формируем единый текст с историей сообщений и системным промптом
+            full_prompt = SYSTEM_PROMPT + "\n\nИстория сообщений:\n"
             
-            # Добавляем системное сообщение для лучшего контекста
-            system_message = {
-                "role": "system",
-                "content": SYSTEM_PROMPT  # Используем глобальную переменную
-            }
-            conversation.append(system_message)
-            
-            # Добавляем всю историю сообщений
+            # Добавляем всю историю сообщений в текстовом формате
             for msg in chat_messages:
-                role = "user" if msg.sender == "user" else "assistant"
-                conversation.append({"role": role, "content": msg.text})
+                sender = "Пользователь" if msg.sender == "user" else "Ассистент"
+                full_prompt += f"{sender}: {msg.text}\n"
+            
+            # Добавляем текущее сообщение
+            full_prompt += f"\nПользователь: {message}\n\nАссистент:"
             
             # Отправляем запрос к модели с полным контекстом
             response = requests.post(
                 OLLAMA_API_URL,
                 json={
                     "model": MODEL_NAME,
-                    "prompt": message,
+                    "prompt": full_prompt,
                     "stream": True,
-                    "messages": conversation,
-                    "context_window": 4096  # Увеличиваем окно контекста
+                    "options": {
+                        "num_ctx": 4096,
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "num_predict": 2048
+                    }
                 },
                 stream=True
             )
@@ -185,11 +168,15 @@ def chat():
             accumulated_text = ""
             for line in response.iter_lines():
                 if line and request_id in active_requests:
-                    json_response = json.loads(line)
-                    if 'response' in json_response:
-                        chunk = json_response['response']
-                        accumulated_text += chunk
-                        yield chunk
+                    try:
+                        json_response = json.loads(line)
+                        if 'response' in json_response:
+                            chunk = json_response['response']
+                            accumulated_text += chunk
+                            yield chunk
+                    except json.JSONDecodeError as e:
+                        print(f"Error decoding JSON: {e}, line: {line}")
+                        continue
                         
             # Сохраняем ответ бота с timestamp через секунду после сообщения пользователя
             if accumulated_text:
@@ -205,7 +192,7 @@ def chat():
                 db.commit()
                 
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error in generate_stream: {e}")
             yield f"Error: {str(e)}"
             
         finally:
