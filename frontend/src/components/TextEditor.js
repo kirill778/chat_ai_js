@@ -1,17 +1,24 @@
 import React, { useState } from 'react';
+import { 
+  Bold, 
+  Italic, 
+  Underline, 
+  AlignLeft, 
+  AlignCenter, 
+  AlignRight, 
+  List,
+  FileText,
+  Save,
+  Wand2
+} from 'lucide-react';
 import './TextEditor.css';
 
 const TextEditor = ({ isOpen, onClose, onSave }) => {
-  const [text, setText] = useState('');
-  const [letterType, setLetterType] = useState('business');
+  const [content, setContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const letterTypes = {
-    business: 'Деловое письмо',
-    personal: 'Личное письмо',
-    complaint: 'Жалоба',
-    gratitude: 'Благодарственное письмо',
-    invitation: 'Приглашение'
+  const handleFormat = (command) => {
+    document.execCommand(command, false);
   };
 
   const handleGenerate = async () => {
@@ -23,13 +30,18 @@ const TextEditor = ({ isOpen, onClose, onSave }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          type: letterType,
-          content: text
+          type: 'business',
+          content: content
         }),
       });
       
       const data = await response.json();
-      setText(data.text);
+      setContent(data.text);
+      // Обновляем содержимое редактируемого div
+      const editorDiv = document.querySelector('.editor-content');
+      if (editorDiv) {
+        editorDiv.innerHTML = data.text;
+      }
     } catch (error) {
       console.error('Error generating letter:', error);
     }
@@ -41,45 +53,106 @@ const TextEditor = ({ isOpen, onClose, onSave }) => {
   return (
     <div className="text-editor-overlay">
       <div className="text-editor-container">
+        {/* Top Bar */}
         <div className="text-editor-header">
-          <h2>Редактор письма</h2>
+          <div className="header-left">
+            <FileText size={24} />
+            <h2>Редактор документа</h2>
+          </div>
           <button className="close-button" onClick={onClose}>×</button>
         </div>
         
-        <div className="text-editor-controls">
-          <select 
-            value={letterType}
-            onChange={(e) => setLetterType(e.target.value)}
-            className="letter-type-select"
+        {/* Toolbar */}
+        <div className="text-editor-toolbar">
+          <button
+            onClick={() => handleFormat('bold')}
+            className="toolbar-button"
+            title="Жирный"
           >
-            {Object.entries(letterTypes).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+            <Bold size={20} />
+          </button>
+          <button
+            onClick={() => handleFormat('italic')}
+            className="toolbar-button"
+            title="Курсив"
+          >
+            <Italic size={20} />
+          </button>
+          <button
+            onClick={() => handleFormat('underline')}
+            className="toolbar-button"
+            title="Подчёркнутый"
+          >
+            <Underline size={20} />
+          </button>
           
+          <div className="toolbar-divider" />
+          
+          <button
+            onClick={() => handleFormat('justifyLeft')}
+            className="toolbar-button"
+            title="По левому краю"
+          >
+            <AlignLeft size={20} />
+          </button>
+          <button
+            onClick={() => handleFormat('justifyCenter')}
+            className="toolbar-button"
+            title="По центру"
+          >
+            <AlignCenter size={20} />
+          </button>
+          <button
+            onClick={() => handleFormat('justifyRight')}
+            className="toolbar-button"
+            title="По правому краю"
+          >
+            <AlignRight size={20} />
+          </button>
+          
+          <div className="toolbar-divider" />
+          
+          <button
+            onClick={() => handleFormat('insertUnorderedList')}
+            className="toolbar-button"
+            title="Маркированный список"
+          >
+            <List size={20} />
+          </button>
+
+          <div className="toolbar-divider" />
+
           <button 
             className="generate-button"
             onClick={handleGenerate}
             disabled={isGenerating}
           >
-            {isGenerating ? 'Генерация...' : 'Сгенерировать письмо'}
+            <Wand2 size={20} />
+            {isGenerating ? 'Генерация...' : 'Сгенерировать текст'}
           </button>
         </div>
 
-        <textarea
-          className="text-editor-textarea"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Введите текст письма или опишите, что вы хотите написать..."
-        />
+        {/* Editor Area */}
+        <div className="text-editor-content">
+          <div
+            className="editor-content"
+            contentEditable
+            onInput={(e) => setContent(e.currentTarget.innerHTML)}
+            dangerouslySetInnerHTML={{ __html: content }}
+          />
+        </div>
 
+        {/* Footer */}
         <div className="text-editor-footer">
-          <button className="cancel-button" onClick={onClose}>Отмена</button>
+          <button className="cancel-button" onClick={onClose}>
+            Отмена
+          </button>
           <button 
             className="save-button" 
-            onClick={() => onSave(text)}
-            disabled={!text.trim()}
+            onClick={() => onSave(content)}
+            disabled={!content.trim()}
           >
+            <Save size={16} />
             Сохранить
           </button>
         </div>
