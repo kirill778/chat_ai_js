@@ -173,7 +173,6 @@ const Chat = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isLoading) {
-      // Если идет генерация, останавливаем её
       await stopGeneration(e);
       return;
     }
