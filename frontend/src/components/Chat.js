@@ -4,6 +4,13 @@ import Notification from './Notification';
 
 const API_URL = 'http://localhost:5000';
 
+const DeleteIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M1.75 3.5H12.25M5.25 1.75H8.75M5.25 12.25V6.125M8.75 12.25V6.125" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M2.625 3.5L3.0625 10.5C3.0625 11.4665 3.8585 12.25 4.8125 12.25H9.1875C10.1415 12.25 10.9375 11.4665 10.9375 10.5L11.375 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
 const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -345,6 +352,30 @@ const Chat = () => {
     }
   };
 
+  const handleDeleteChat = async (e, chatId) => {
+    e.stopPropagation(); // Предотвращаем всплытие события к родительскому элементу
+    
+    if (!window.confirm('Вы уверены, что хотите удалить этот чат?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/chats/${chatId}`, {
+        method: 'DELETE',
+      });
+      
+      if (response.ok) {
+        setChats(chats.filter(chat => chat.id !== chatId));
+        if (currentChatId === chatId) {
+          setCurrentChatId(null);
+          setMessages([]);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+    }
+  };
+
   return (
     <div className="chat-app">
       <div className="chat-sidebar">
@@ -358,27 +389,36 @@ const Chat = () => {
               className={`chat-item ${currentChatId === chat.id ? 'active' : ''}`}
               onClick={() => handleSelectChat(chat)}
             >
-              {editingTitle === chat.id ? (
-                <input
-                  type="text"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  onBlur={() => handleTitleSave(chat.id)}
-                  onKeyDown={(e) => handleTitleKeyPress(e, chat.id)}
-                  autoFocus
-                  className="chat-title-input"
-                />
-              ) : (
-                <div 
-                  className="chat-title" 
-                  onDoubleClick={() => handleTitleDoubleClick(chat)}
-                >
-                  {chat.title || 'Новый чат'}
+              <div className="chat-item-content">
+                {editingTitle === chat.id ? (
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onBlur={() => handleTitleSave(chat.id)}
+                    onKeyDown={(e) => handleTitleKeyPress(e, chat.id)}
+                    autoFocus
+                    className="chat-title-input"
+                  />
+                ) : (
+                  <div 
+                    className="chat-title" 
+                    onDoubleClick={() => handleTitleDoubleClick(chat)}
+                  >
+                    {chat.title || 'Новый чат'}
+                  </div>
+                )}
+                <div className="chat-date">
+                  {new Date(chat.created_at).toLocaleDateString()}
                 </div>
-              )}
-              <div className="chat-date">
-                {new Date(chat.created_at).toLocaleDateString()}
               </div>
+              <button 
+                className="delete-chat-button"
+                onClick={(e) => handleDeleteChat(e, chat.id)}
+                title="Удалить чат"
+              >
+                <DeleteIcon />
+              </button>
             </div>
           ))}
         </div>

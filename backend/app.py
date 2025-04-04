@@ -396,6 +396,22 @@ def update_chat(chat_id):
         print(f"Error updating chat: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
+@app.route('/api/chats/<int:chat_id>', methods=['DELETE'])
+def delete_chat(chat_id):
+    try:
+        db = next(get_db())
+        chat = db.query(Chat).filter(Chat.id == chat_id).first()
+        if not chat:
+            return jsonify({'error': 'Chat not found'}), 404
+            
+        db.delete(chat)
+        db.commit()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error deleting chat: {str(e)}")
+        return jsonify({'error': str(e)}), 400
+
 # Запускаем сервер для разработки
 if __name__ == '__main__':
     # Создаем базовую команду для уведомлений при первом запуске
