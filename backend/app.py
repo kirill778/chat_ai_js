@@ -120,12 +120,14 @@ def chat():
         if command:
             result = execute_command(command, args)
             
-            # Сохраняем результат команды как сообщение бота
+            # Сохраняем результат команды как сообщение бота через секунду после сообщения пользователя
+            bot_timestamp = (datetime.fromisoformat(timestamp) + 
+                           timedelta(seconds=1)).isoformat()
             bot_message = Message(
                 chat_id=chat.id,
                 text=f"Выполнена команда {trigger}: {args if args else ''}",
                 sender='bot',
-                timestamp=datetime.utcnow()
+                timestamp=datetime.fromisoformat(bot_timestamp)
             )
             db.add(bot_message)
             db.commit()
