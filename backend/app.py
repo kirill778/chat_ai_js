@@ -60,6 +60,14 @@ AVAILABLE_MODELS = {
         "model_id": "gemini-2.0-pro",
         "max_tokens": 2048,
         "api_key": "AIzaSyBM8dCaUfXBE3Yz8R263kslnFz9GfAoiFM"
+    },
+    "claude-3-7-sonnet": {
+        "name": "Claude 3.7 Sonnet",
+        "provider": "langdock",
+        "endpoint": "https://api.langdock.com/anthropic/eu/v1/messages",
+        "model_id": "claude-3-7-sonnet-20250219",
+        "max_tokens": 4096,
+        "api_key": "sk-dC2KBHGN_2vWk7SVpIZVpq81X3vwMzt7iCFzZjpA_o4OMPQ_RUjAqjOVi1vDW2Zhit1nf1ekfmWB0F983QcLKg"
     }
 }
 
@@ -233,6 +241,43 @@ def chat():
             print(f"Hyperbolic API response data: {json.dumps(response_data)}")
             
             bot_response = response_data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            if not bot_response:
+                return jsonify({'error': 'Empty response from API'}), 500
+            
+        elif model_config['provider'] == 'langdock':
+            # Формируем запрос для Langdock API (Claude)
+            api_data = {
+                'model': model_config['model_id'],
+                'messages': messages_history,
+                'max_tokens': model_config['max_tokens'],
+                'temperature': 0.7,
+                'stream': False
+            }
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {model_config["api_key"]}'
+            }
+            
+            print(f"Sending request to Langdock API: {json.dumps(api_data)}")
+            
+            response = requests.post(
+                model_config['endpoint'],
+                headers=headers,
+                json=api_data,
+                timeout=60
+            )
+            
+            print(f"Langdock API response status: {response.status_code}")
+            
+            if response.status_code != 200:
+                print(f"Langdock API error response: {response.text}")
+                return jsonify({'error': f'API request failed with status {response.status_code}: {response.text}'}), 500
+                
+            response_data = response.json()
+            print(f"Langdock API response data: {json.dumps(response_data)}")
+            
+            bot_response = response_data.get('content', [{}])[0].get('text', '')
             if not bot_response:
                 return jsonify({'error': 'Empty response from API'}), 500
             
