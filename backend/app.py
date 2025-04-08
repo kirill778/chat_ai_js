@@ -11,6 +11,7 @@ from typing import Optional, List, Dict
 import subprocess
 import sys
 import aiohttp
+import os
 
 # Создаем экземпляр приложения Flask
 app = Flask(__name__)
@@ -43,6 +44,22 @@ AVAILABLE_MODELS = {
         "model_id": "deepseek-ai/DeepSeek-V3-0324",
         "max_tokens": 512,
         "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJraW5nMjI4NjY2QGdtYWlsLmNvbSIsImlhdCI6MTczMTUyMDIzM30.nQLMovda2N0X5U1dH2yJ_sJaYczHIMIzyte1onDdNm8"
+    },
+    "gemini-2.5-pro-preview-03-25": {
+        "name": "Gemini 2.5 Pro",
+        "provider": "google",
+        "endpoint": "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro-preview-03-25:generateContent",
+        "model_id": "gemini-2.5-pro-preview-03-25",
+        "max_tokens": 2048,
+        "api_key": "AIzaSyBM8dCaUfXBE3Yz8R263kslnFz9GfAoiFM"
+    },
+    "gemini-2.0-pro": {
+        "name": "Gemini 2.0 Pro",
+        "provider": "google",
+        "endpoint": "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-pro:generateContent",
+        "model_id": "gemini-2.0-pro",
+        "max_tokens": 2048,
+        "api_key": "AIzaSyBM8dCaUfXBE3Yz8R263kslnFz9GfAoiFM"
     }
 }
 

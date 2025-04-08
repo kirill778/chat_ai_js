@@ -231,8 +231,22 @@ const Chat = () => {
             throw new Error(data.error);
         }
 
+        // Parse the content if it's a JSON string
+        let parsedContent;
+        try {
+            parsedContent = typeof data.content === 'string' ? JSON.parse(data.content) : data.content;
+        } catch (e) {
+            parsedContent = { type: 'text', content: data.content };
+        }
+
+        // Handle different response types
+        if (parsedContent.type === 'write_letter') {
+            handleWriteLetter();
+            return;
+        }
+
         const botMessage = {
-            text: data.content,
+            text: parsedContent.content,
             sender: 'bot',
             timestamp: new Date().toISOString(),
             id: Date.now()
@@ -385,17 +399,14 @@ const Chat = () => {
 
   // Обработчик сохранения письма
   const handleSaveLetter = (text) => {
-    // Устанавливаем текст в поле ввода и вызываем отправку
+    // Устанавливаем текст в поле ввода
     setInput(text);
-    // Создаем событие для вызова handleSubmit
-    const event = new Event('submit', {
-      bubbles: true,
-      cancelable: true,
-    });
-    setTimeout(() => {
-      handleSubmit(event);
-      setShowTextEditor(false);
-    }, 0);
+    // Закрываем редактор
+    setShowTextEditor(false);
+    // Фокусируемся на поле ввода
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
   };
 
   // Обработчик команд
