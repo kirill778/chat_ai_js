@@ -17,6 +17,16 @@ const TextEditor = ({ isOpen, onClose, onSave }) => {
   const [content, setContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
+  console.log('TextEditor rendered, isOpen:', isOpen);
+
+  // Force the component to render when isOpen is true
+  if (!isOpen) {
+    console.log('TextEditor not showing because isOpen is false');
+    return null;
+  }
+
+  console.log('TextEditor is showing because isOpen is true');
+
   const handleFormat = (command) => {
     document.execCommand(command, false);
   };
@@ -47,8 +57,6 @@ const TextEditor = ({ isOpen, onClose, onSave }) => {
     }
     setIsGenerating(false);
   };
-
-  if (!isOpen) return null;
 
   return (
     <div className="text-editor-overlay">

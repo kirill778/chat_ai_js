@@ -65,6 +65,8 @@ AVAILABLE_MODELS = {
 
 def execute_command(command: Command, args: Optional[str] = None) -> str:
     """Выполняет команду в зависимости от её типа."""
+    print(f"Executing command: {command.trigger}, type: {command.action_type}")
+    
     if not command.is_active:
         return "Эта команда отключена."
 
@@ -77,11 +79,14 @@ def execute_command(command: Command, args: Optional[str] = None) -> str:
             })
         elif command.action_type == "script":
             # Для скриптов выполняем код Python
-            if command.trigger.lower() == "помоги написать письмо":
-                return json.dumps({
+            if command.trigger.lower() == "открой редактор письма":
+                print("Executing 'Открой редактор письма' command")
+                result = json.dumps({
                     "type": "write_letter",
                     "content": "Открываю редактор для написания письма"
                 })
+                print(f"Command result: {result}")
+                return result
             else:
                 local_vars = {"args": args}
                 exec(command.action_data, globals(), local_vars)
@@ -564,7 +569,7 @@ def init_commands():
             is_active=True
         ),
         Command(
-            trigger="Помоги написать письмо",
+            trigger="Открой редактор письма",
             description="Открывает редактор для написания письма",
             action_type="script",
             action_data="result = 'Открываю редактор для написания письма'",
@@ -675,6 +680,20 @@ def get_models():
             for model_id, config in AVAILABLE_MODELS.items()
         ]
     })
+
+@app.route('/api/check-commands', methods=['GET'])
+def check_commands():
+    """Проверка доступных команд"""
+    db = next(get_db())
+    commands = db.query(Command).all()
+    return jsonify([{
+        'id': cmd.id,
+        'trigger': cmd.trigger,
+        'description': cmd.description,
+        'action_type': cmd.action_type,
+        'action_data': cmd.action_data,
+        'is_active': cmd.is_active
+    } for cmd in commands])
 
 # Запускаем сервер для разработки
 if __name__ == '__main__':
