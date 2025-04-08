@@ -14,6 +14,7 @@ import aiohttp
 import os
 import tempfile
 from werkzeug.utils import secure_filename
+import docx  # Import for Word document handling
 
 # Создаем экземпляр приложения Flask
 app = Flask(__name__)
@@ -72,6 +73,33 @@ AVAILABLE_MODELS = {
         "api_key": "sk-dC2KBHGN_2vWk7SVpIZVpq81X3vwMzt7iCFzZjpA_o4OMPQ_RUjAqjOVi1vDW2Zhit1nf1ekfmWB0F983QcLKg"
     }
 }
+
+# Функция для конвертации Word документа в текст
+def convert_docx_to_text(filepath):
+    """Convert a Word document to text."""
+    try:
+        doc = docx.Document(filepath)
+        full_text = []
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+        return '\n'.join(full_text)
+    except Exception as e:
+        print(f"Error converting Word document: {str(e)}")
+        return None
+
+# Функция для определения типа файла и его обработки
+def process_file(filepath, filename):
+    """Process a file based on its extension and return its text content."""
+    file_extension = os.path.splitext(filename)[1].lower()
+    
+    if file_extension == '.docx':
+        return convert_docx_to_text(filepath)
+    elif file_extension == '.txt':
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            return f.read()
+    else:
+        # Для других типов файлов можно добавить дополнительные обработчики
+        return None
 
 def execute_command(command: Command, args: Optional[str] = None) -> str:
     """Выполняет команду в зависимости от её типа."""
@@ -776,10 +804,11 @@ def process_document():
         db.commit()
     
     try:
-        # Read file content - this handles text files
-        # In a real application, you might need file type detection and dedicated parsers
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            file_content = f.read()
+        # Process the file based on its type
+        file_content = process_file(filepath, filename)
+        
+        if file_content is None:
+            return jsonify({'error': 'Unsupported file format or error processing file'}), 400
         
         # Create combined message with document content and prompt
         combined_message = f"Document: {filename}\n\n{file_content}\n\nPrompt: {prompt}"

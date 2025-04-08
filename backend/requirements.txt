@@ -2,6 +2,7 @@ flask==3.0.2
 flask-cors==4.0.0
 requests==2.31.0 
 werkzeug==3.0.1
+python-docx==0.8.11
 
 psycopg2-binary
 SQLAlchemy
