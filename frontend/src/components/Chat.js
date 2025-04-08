@@ -16,7 +16,7 @@ const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
+  const [selectedModel, setSelectedModel] = useState('');
   const [availableModels, setAvailableModels] = useState([]);
   const [currentStreamingMessage, setCurrentStreamingMessage] = useState('');
   const [selectedText, setSelectedText] = useState('');
@@ -51,7 +51,7 @@ const Chat = () => {
     fetch(`${API_URL}/api/models`)
       .then(response => response.json())
       .then(data => {
-        setAvailableModels(data.models);
+        setAvailableModels(data.models || []);
       })
       .catch(error => console.error('Error loading models:', error));
   }, []);
@@ -60,16 +60,17 @@ const Chat = () => {
     try {
       const response = await fetch(`${API_URL}/api/chats`);
       const data = await response.json();
-      setChats(data);
+      setChats(Array.isArray(data) ? data : []);
       
       // Если есть чаты, выбираем последний
-      if (data.length > 0) {
+      if (Array.isArray(data) && data.length > 0) {
         const lastChat = data[data.length - 1];
         setCurrentChatId(lastChat.id);
-        setMessages(lastChat.messages);
+        setMessages(lastChat.messages || []);
       }
     } catch (error) {
       console.error('Error fetching chats:', error);
+      setChats([]);
     }
   };
 
@@ -282,18 +283,47 @@ const Chat = () => {
 
   const createNewChat = async () => {
     try {
+      console.log('Creating new chat...');
       const response = await fetch(`${API_URL}/api/chats`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ title: 'Новый чат' })
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const newChat = await response.json();
+      console.log('New chat created:', newChat);
+      
       setChats(prev => [newChat, ...prev]);
       setCurrentChatId(newChat.id);
       setMessages([]);
+      
+      // Show notification
+      setNotification({
+        message: 'Новый чат создан',
+        type: 'success'
+      });
+      
+      // Clear notification after 3 seconds
+      setTimeout(() => {
+        setNotification(null);
+      }, 3000);
     } catch (error) {
       console.error('Error creating new chat:', error);
+      setNotification({
+        message: `Ошибка при создании чата: ${error.message}`,
+        type: 'error'
+      });
+      
+      // Clear notification after 5 seconds
+      setTimeout(() => {
+        setNotification(null);
+      }, 5000);
     }
   };
 
@@ -463,7 +493,7 @@ const Chat = () => {
           + Новый чат
         </button>
         <div className="chat-list">
-          {chats.map(chat => (
+          {Array.isArray(chats) && chats.map(chat => (
             <div 
               key={chat.id} 
               className={`chat-item ${currentChatId === chat.id ? 'active' : ''}`}
@@ -520,6 +550,7 @@ const Chat = () => {
             value={selectedModel}
             onChange={(e) => setSelectedModel(e.target.value)}
           >
+            <option value="">Выбрать модель</option>
             {availableModels.map(model => (
               <option key={model.id} value={model.id}>
                 {model.name}
