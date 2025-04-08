@@ -12,6 +12,8 @@ import subprocess
 import sys
 import aiohttp
 import os
+import tempfile
+from werkzeug.utils import secure_filename
 
 # Создаем экземпляр приложения Flask
 app = Flask(__name__)
@@ -739,6 +741,204 @@ def check_commands():
         'action_data': cmd.action_data,
         'is_active': cmd.is_active
     } for cmd in commands])
+
+@app.route('/api/process-document', methods=['POST'])
+def process_document():
+    """Process an uploaded document along with a prompt."""
+    if 'document' not in request.files:
+        return jsonify({'error': 'No document provided'}), 400
+    
+    file = request.files['document']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    # Get prompt and model from the form data
+    prompt = request.form.get('prompt', '')
+    model = request.form.get('model', 'gemma3:12b')
+    chat_id = request.form.get('chat_id')
+    
+    # Save the file temporarily
+    temp_dir = tempfile.gettempdir()
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(temp_dir, filename)
+    file.save(filepath)
+    
+    db = next(get_db())
+    
+    # Create or get chat
+    if chat_id:
+        chat = db.query(Chat).filter(Chat.id == chat_id).first()
+        if not chat:
+            return jsonify({'error': 'Chat not found'}), 404
+    else:
+        chat = Chat()
+        db.add(chat)
+        db.commit()
+    
+    try:
+        # Read file content - this handles text files
+        # In a real application, you might need file type detection and dedicated parsers
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            file_content = f.read()
+        
+        # Create combined message with document content and prompt
+        combined_message = f"Document: {filename}\n\n{file_content}\n\nPrompt: {prompt}"
+        
+        # Save user message (just the prompt part)
+        user_message = Message(
+            chat_id=chat.id,
+            text=f"[Document: {filename}] {prompt}",
+            sender='user',
+            timestamp=datetime.utcnow()
+        )
+        db.add(user_message)
+        db.commit()
+        
+        # Get model configuration
+        model_config = AVAILABLE_MODELS.get(model)
+        if not model_config:
+            return jsonify({'error': 'Model not found'}), 404
+        
+        # Get the response from the model (reuse existing model handling code)
+        # Create a simplified context with just this message
+        messages_history = [{
+            'role': 'user',
+            'content': combined_message
+        }]
+        
+        # Process with model using the same approach as in chat endpoint
+        if model_config['provider'] == 'hyperbolic':
+            # Use Hyperbolic API
+            api_data = {
+                'messages': messages_history,
+                'model': model_config['model_id'],
+                'max_tokens': model_config['max_tokens'],
+                'temperature': 0.1,
+                'top_p': 0.9
+            }
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {model_config["api_key"]}'
+            }
+            
+            response = requests.post(
+                model_config['endpoint'],
+                headers=headers,
+                json=api_data,
+                timeout=60  # Increased timeout for document processing
+            )
+            
+            if response.status_code != 200:
+                return jsonify({'error': f'API request failed with status {response.status_code}: {response.text}'}), 500
+                
+            response_data = response.json()
+            bot_response = response_data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            
+        elif model_config['provider'] == 'langdock':
+            # Use Langdock API (Claude)
+            api_data = {
+                'model': model_config['model_id'],
+                'messages': messages_history,
+                'max_tokens': model_config['max_tokens']
+            }
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'anthropic-version': '2023-06-01',
+                'x-api-key': model_config['api_key']
+            }
+            
+            response = requests.post(
+                model_config['endpoint'],
+                headers=headers,
+                json=api_data,
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                return jsonify({'error': f'API request failed with status {response.status_code}: {response.text}'}), 500
+                
+            response_data = response.json()
+            bot_response = response_data.get('content', [{}])[0].get('text', '')
+            
+        elif model_config['provider'] == 'google':
+            # Use Google Gemini API
+            api_data = {
+                'contents': [{'parts': [{'text': combined_message}]}],
+                'generationConfig': {
+                    'temperature': 0.1,
+                    'topK': 1,
+                    'topP': 0.9,
+                    'maxOutputTokens': model_config['max_tokens'],
+                }
+            }
+            
+            headers = {
+                'Content-Type': 'application/json'
+            }
+            
+            response = requests.post(
+                f"{model_config['endpoint']}?key={model_config['api_key']}",
+                headers=headers,
+                json=api_data,
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                return jsonify({'error': f'API request failed with status {response.status_code}: {response.text}'}), 500
+                
+            response_data = response.json()
+            bot_response = response_data.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '')
+            
+        elif model_config['provider'] == 'ollama':
+            # Use Ollama API
+            api_data = {
+                'model': model,
+                'prompt': combined_message,
+                'stream': False,
+                'temperature': 0.1,
+                'top_p': 0.9
+            }
+            
+            response = requests.post(
+                model_config['endpoint'],
+                json=api_data,
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                return jsonify({'error': f'API request failed with status {response.status_code}: {response.text}'}), 500
+                
+            response_data = response.json()
+            bot_response = response_data.get('response', '')
+        
+        else:
+            return jsonify({'error': f'Unsupported model provider: {model_config["provider"]}'}), 500
+        
+        # Save bot response
+        if bot_response:
+            bot_message = Message(
+                chat_id=chat.id,
+                text=bot_response,
+                sender='bot',
+                timestamp=datetime.utcnow()
+            )
+            db.add(bot_message)
+            db.commit()
+        
+        return jsonify({
+            'chat_id': chat.id,
+            'response': bot_response
+        })
+    
+    except Exception as e:
+        return jsonify({'error': f'Error processing document: {str(e)}'}), 500
+    
+    finally:
+        # Clean up the temporary file
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
 # Запускаем сервер для разработки
 if __name__ == '__main__':

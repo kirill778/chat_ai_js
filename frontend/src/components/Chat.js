@@ -38,6 +38,8 @@ const Chat = () => {
   const [showTextEditor, setShowTextEditor] = useState(false);
   const [availableCommands, setAvailableCommands] = useState([]);
   const [showCommands, setShowCommands] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState(null);
+  const documentInputRef = useRef(null);
 
   // Загрузка истории чатов при монтировании
   useEffect(() => {
@@ -199,19 +201,33 @@ const Chat = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMessage = {
-        text: input,
-        sender: 'user',
-        timestamp: new Date().toISOString(),
-        id: Date.now()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
+    if (isLoading) return;
+    
+    if (!input.trim() && !selectedDocument) {
+      return;
+    }
+    
     setIsLoading(true);
-
+    
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Check if we have a document to process
+    if (selectedDocument) {
+      await processDocumentWithPrompt();
+      return;
+    }
+    
+    const message = {
+      text: input,
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString()
+    };
+    
+    setMessages(prev => [...prev, message]);
+    setInput('');
+    
     try {
         const response = await fetch(`${API_URL}/api/chat`, {
             method: 'POST',
@@ -271,6 +287,87 @@ const Chat = () => {
         setMessages(prev => [...prev, errorMessage]);
     } finally {
         setIsLoading(false);
+    }
+  };
+
+  const processDocumentWithPrompt = async () => {
+    try {
+      // Create a FormData object to handle file upload
+      const formData = new FormData();
+      formData.append('document', selectedDocument);
+      formData.append('prompt', input.trim() || 'Please analyze this document');
+      formData.append('model', selectedModel || 'gemma3:12b');
+      
+      if (currentChatId) {
+        formData.append('chat_id', currentChatId);
+      }
+      
+      // Show the user message with document indicator
+      const userMessage = {
+        text: `[Document: ${selectedDocument.name}] ${input || 'Please analyze this document'}`,
+        sender: 'user',
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      setMessages(prev => [...prev, userMessage]);
+      setInput('');
+      
+      // Reset the selected document
+      setSelectedDocument(null);
+      
+      // Make the API request
+      const response = await fetch(`${API_URL}/api/process-document`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // If this is a new chat, update the current chat ID
+      if (!currentChatId && data.chat_id) {
+        setCurrentChatId(data.chat_id);
+        // Refresh the chat list
+        fetchChats();
+      }
+      
+      // Add the bot response to the messages
+      const botMessage = {
+        text: data.response,
+        sender: 'bot',
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      setMessages(prev => [...prev, botMessage]);
+      
+    } catch (error) {
+      console.error('Error processing document:', error);
+      setNotification({
+        type: 'error',
+        message: `Error processing document: ${error.message}`
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleDocumentSelect = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedDocument(e.target.files[0]);
+      // Focus on the input field for the prompt
+      inputRef.current?.focus();
+    }
+  };
+  
+  const handleRemoveDocument = () => {
+    setSelectedDocument(null);
+    // Reset the file input
+    if (documentInputRef.current) {
+      documentInputRef.current.value = '';
     }
   };
 
@@ -593,20 +690,73 @@ const Chat = () => {
             <button type="submit">Применить</button>
           </form>
         )}
-        <form className="input-form" onSubmit={handleSubmit}>
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Введите сообщение..."
-            disabled={isLoading}
-          />
-          <button type="submit" disabled={isLoading}>
-            Отправить
-          </button>
-        </form>
+        <div className="chat-input-container">
+          {/* Document upload indicator */}
+          {selectedDocument && (
+            <div className="document-indicator">
+              <span>{selectedDocument.name}</span>
+              <button 
+                onClick={handleRemoveDocument}
+                className="remove-document-btn"
+                title="Remove document"
+              >
+                ×
+              </button>
+            </div>
+          )}
+          
+          <form onSubmit={handleSubmit} className="chat-input-form">
+            <div className="input-actions">
+              <button 
+                type="button"
+                onClick={() => documentInputRef.current?.click()}
+                className="document-upload-btn"
+                title="Upload document"
+                disabled={isLoading}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 18V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M9 15L12 12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+              <input
+                type="file"
+                ref={documentInputRef}
+                onChange={handleDocumentSelect}
+                style={{ display: 'none' }}
+                accept=".txt,.pdf,.doc,.docx"
+              />
+              {/* ... other existing buttons ... */}
+            </div>
+            
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={selectedDocument ? "Enter prompt about the document..." : "Type your message..."}
+              disabled={isLoading}
+              ref={inputRef}
+              className="chat-input"
+            />
+            
+            <button 
+              type="submit" 
+              disabled={isLoading && !selectedDocument && !input.trim()}
+              className="send-button"
+            >
+              {isLoading ? (
+                <div className="loading-spinner"></div>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M22 2L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </button>
+          </form>
+        </div>
       </div>
       {notification && <Notification {...notification} />}
       <button 
