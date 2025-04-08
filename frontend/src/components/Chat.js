@@ -14,8 +14,10 @@ const DeleteIcon = () => (
 
 const Chat = () => {
   const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState('');
+  const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
+  const [availableModels, setAvailableModels] = useState([]);
   const [currentStreamingMessage, setCurrentStreamingMessage] = useState('');
   const [selectedText, setSelectedText] = useState('');
   const [editingMessage, setEditingMessage] = useState(null);
@@ -39,6 +41,16 @@ const Chat = () => {
   useEffect(() => {
     fetchChats();
     fetchSystemPrompt();
+  }, []);
+
+  // Загрузка доступных моделей при монтировании компонента
+  useEffect(() => {
+    fetch(`${API_URL}/api/models`)
+      .then(response => response.json())
+      .then(data => {
+        setAvailableModels(data.models);
+      })
+      .catch(error => console.error('Error loading models:', error));
   }, []);
 
   const fetchChats = async () => {
@@ -183,145 +195,61 @@ const Chat = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isLoading) {
-      await stopGeneration(e);
-      return;
-    }
+    if (!input.trim() || isLoading) return;
 
-    if (!inputMessage.trim()) return;
-
-    const timestamp = new Date().toISOString();
     const userMessage = {
-      text: inputMessage,
-      sender: 'user',
-      timestamp: timestamp,
-      id: Date.now()
+        text: input,
+        sender: 'user',
+        timestamp: new Date().toISOString(),
+        id: Date.now()
     };
 
     setMessages(prev => [...prev, userMessage]);
-    setInputMessage('');
+    setInput('');
     setIsLoading(true);
-    setCurrentStreamingMessage('');
-    
-    abortControllerRef.current = new AbortController();
-    const requestId = Date.now().toString();
-    setCurrentRequestId(requestId);
 
     try {
-      const response = await fetch(`${API_URL}/api/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          message: inputMessage,
-          request_id: requestId,
-          chat_id: currentChatId,
-          timestamp: timestamp
-        }),
-        signal: abortControllerRef.current.signal
-      });
+        const response = await fetch(`${API_URL}/api/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: input,
+                model: selectedModel,
+                chat_id: currentChatId
+            }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
 
-      const contentType = response.headers.get('content-type');
-      
-      if (contentType && contentType.includes('application/json')) {
         const data = await response.json();
         
-        switch (data.type) {
-          case 'notification':
-            setNotification({
-              message: data.content,
-              timestamp: new Date().toISOString()
-            });
-            setTimeout(() => setNotification(null), 5000);
-            break;
-            
-          case 'write_letter':
-            setShowTextEditor(true);
-            const botMessage = {
-              text: data.content,
-              sender: 'bot',
-              timestamp: new Date().toISOString(),
-              id: Date.now()
-            };
-            setMessages(prev => [...prev, botMessage]);
-            break;
-            
-          case 'script_result':
-            const scriptMessage = {
-              text: data.content,
-              sender: 'bot',
-              timestamp: new Date().toISOString(),
-              id: Date.now()
-            };
-            setMessages(prev => [...prev, scriptMessage]);
-            break;
-            
-          case 'error':
-            const errorMessage = {
-              text: data.content,
-              sender: 'bot',
-              timestamp: new Date().toISOString(),
-              id: Date.now(),
-              isError: true
-            };
-            setMessages(prev => [...prev, errorMessage]);
-            break;
+        if (data.error) {
+            throw new Error(data.error);
         }
-        setIsLoading(false);
-        return;
-      }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedText = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        
-        const text = decoder.decode(value);
-        accumulatedText += text;
-        setCurrentStreamingMessage(accumulatedText);
-      }
-
-      if (accumulatedText.trim()) {
         const botMessage = {
-          text: accumulatedText.trim(),
-          sender: 'bot',
-          timestamp: new Date().toISOString(),
-          id: Date.now()
+            text: data.content,
+            sender: 'bot',
+            timestamp: new Date().toISOString(),
+            id: Date.now()
         };
+
         setMessages(prev => [...prev, botMessage]);
-      }
-      
-      setCurrentStreamingMessage('');
-      await fetchChats(); // Обновляем список чатов после получения ответа
-      
     } catch (error) {
-      if (error.name === 'AbortError') {
-        console.log('Request was aborted');
-        return;
-      }
-      console.error('Error:', error);
-      const errorMessage = {
-        text: 'Извините, произошла ошибка. Попробуйте еще раз.',
-        sender: 'bot',
-        timestamp: new Date().toISOString(),
-        id: Date.now(),
-        isError: true
-      };
-      setMessages(prev => [...prev, errorMessage]);
+        console.error('Error:', error);
+        const errorMessage = {
+            text: `Error: ${error.message}`,
+            sender: 'error',
+            timestamp: new Date().toISOString(),
+            id: Date.now()
+        };
+        setMessages(prev => [...prev, errorMessage]);
     } finally {
-      setIsLoading(false);
-      setCurrentRequestId('');
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
+        setIsLoading(false);
     }
   };
 
@@ -458,7 +386,7 @@ const Chat = () => {
   // Обработчик сохранения письма
   const handleSaveLetter = (text) => {
     // Устанавливаем текст в поле ввода и вызываем отправку
-    setInputMessage(text);
+    setInput(text);
     // Создаем событие для вызова handleSubmit
     const event = new Event('submit', {
       bubbles: true,
@@ -535,6 +463,20 @@ const Chat = () => {
         </div>
       </div>
       <div className="chat-container">
+        <div className="model-selector">
+          <label htmlFor="model-select">Select Model: </label>
+          <select
+            id="model-select"
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+          >
+            {availableModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="messages">
           {messages.map((message, index) => (
             <div 
@@ -553,8 +495,7 @@ const Chat = () => {
           {isLoading && (
             <div className="message bot">
               <div className="message-content">
-                {currentStreamingMessage}
-                <span className="typing-indicator">▋</span>
+                <span className="typing-indicator">...</span>
               </div>
             </div>
           )}
@@ -575,14 +516,14 @@ const Chat = () => {
           <input
             ref={inputRef}
             type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Введите сообщение..."
             disabled={isLoading}
           />
-          <button type="submit">
-            {isLoading ? 'Остановить' : 'Отправить'}
+          <button type="submit" disabled={isLoading}>
+            Отправить
           </button>
         </form>
       </div>

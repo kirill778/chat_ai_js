@@ -7,9 +7,10 @@ import threading
 from database import get_db, Chat, Message, Command
 from datetime import datetime, timedelta
 import re
-from typing import Optional
+from typing import Optional, List, Dict
 import subprocess
 import sys
+import aiohttp
 
 # Создаем экземпляр приложения Flask
 app = Flask(__name__)
@@ -26,6 +27,24 @@ active_requests = {}
 
 # Глобальная переменная для хранения системного промпта
 SYSTEM_PROMPT = """"""
+
+# Список доступных моделей
+AVAILABLE_MODELS = {
+    "gemma3:12b": {
+        "name": "Gemma 3 12B",
+        "provider": "ollama",
+        "endpoint": "http://localhost:11434/api/generate",
+        "max_tokens": 4096
+    },
+    "deepseek-v3": {
+        "name": "DeepSeek V3",
+        "provider": "hyperbolic",
+        "endpoint": "https://api.hyperbolic.xyz/v1/chat/completions",
+        "model_id": "deepseek-ai/DeepSeek-V3-0324",
+        "max_tokens": 512,
+        "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJraW5nMjI4NjY2QGdtYWlsLmNvbSIsImlhdCI6MTczMTUyMDIzM30.nQLMovda2N0X5U1dH2yJ_sJaYczHIMIzyte1onDdNm8"
+    }
+}
 
 def execute_command(command: Command, args: Optional[str] = None) -> str:
     """Выполняет команду в зависимости от её типа."""
@@ -82,9 +101,7 @@ def check_for_commands(message: str) -> tuple[bool, Optional[str], Optional[str]
 def chat():
     data = request.json
     message = data.get('message')
-    request_id = data.get('request_id')
-    chat_id = data.get('chat_id')
-    timestamp = data.get('timestamp') or datetime.utcnow().isoformat()
+    model = data.get('model', 'gemma3:12b')
     
     if not message:
         return jsonify({'error': 'No message provided'}), 400
@@ -95,8 +112,8 @@ def chat():
     is_command, trigger, args = check_for_commands(message)
     
     # Создаем или получаем чат
-    if chat_id:
-        chat = db.query(Chat).filter(Chat.id == chat_id).first()
+    if data.get('chat_id'):
+        chat = db.query(Chat).filter(Chat.id == data['chat_id']).first()
         if not chat:
             return jsonify({'error': 'Chat not found'}), 404
     else:
@@ -104,12 +121,12 @@ def chat():
         db.add(chat)
         db.commit()
     
-    # Сохраняем сообщение пользователя с переданным timestamp
+    # Сохраняем сообщение пользователя
     user_message = Message(
         chat_id=chat.id,
         text=message,
         sender='user',
-        timestamp=datetime.fromisoformat(timestamp)
+        timestamp=datetime.utcnow()
     )
     db.add(user_message)
     db.commit()
@@ -120,33 +137,84 @@ def chat():
         if command:
             result = execute_command(command, args)
             
-            # Сохраняем результат команды как сообщение бота через секунду после сообщения пользователя
-            bot_timestamp = (datetime.fromisoformat(timestamp) + 
-                           timedelta(seconds=1)).isoformat()
+            # Сохраняем результат команды как сообщение бота
             bot_message = Message(
                 chat_id=chat.id,
-                text=f"Выполнена команда {trigger}: {args if args else ''}",
+                text=result,
                 sender='bot',
-                timestamp=datetime.fromisoformat(bot_timestamp)
+                timestamp=datetime.utcnow()
             )
             db.add(bot_message)
             db.commit()
             
-            return Response(
-                result,
-                content_type='application/json'
-            )
+            return jsonify({
+                'chat_id': chat.id,
+                'content': result
+            })
     
-    # Если это не команда или команда не найдена, обрабатываем как обычное сообщение
-    active_requests[request_id] = True
+    # Получаем историю сообщений для контекста
+    chat_messages = db.query(Message).filter(
+        Message.chat_id == chat.id
+    ).order_by(Message.timestamp.asc()).all()
     
-    def generate_stream():
-        try:
-            # Получаем всю историю сообщений для текущего чата
-            chat_messages = db.query(Message).filter(
-                Message.chat_id == chat.id
-            ).order_by(Message.timestamp.asc()).all()
+    # Формируем историю сообщений для API
+    messages_history = []
+    for msg in chat_messages:
+        messages_history.append({
+            'role': 'user' if msg.sender == 'user' else 'assistant',
+            'content': msg.text
+        })
+    
+    # Добавляем текущее сообщение
+    messages_history.append({
+        'role': 'user',
+        'content': message
+    })
+    
+    # Получаем конфигурацию модели
+    model_config = AVAILABLE_MODELS.get(model)
+    if not model_config:
+        return jsonify({'error': 'Model not found'}), 404
+    
+    try:
+        if model_config['provider'] == 'hyperbolic':
+            # Формируем запрос для Hyperbolic API
+            api_data = {
+                'messages': messages_history,
+                'model': model_config['model_id'],
+                'max_tokens': model_config['max_tokens'],
+                'temperature': 0.1,
+                'top_p': 0.9
+            }
             
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {model_config["api_key"]}'
+            }
+            
+            print(f"Sending request to Hyperbolic API: {json.dumps(api_data)}")
+            
+            response = requests.post(
+                model_config['endpoint'],
+                headers=headers,
+                json=api_data,
+                timeout=30
+            )
+            
+            print(f"Hyperbolic API response status: {response.status_code}")
+            
+            if response.status_code != 200:
+                print(f"Hyperbolic API error response: {response.text}")
+                return jsonify({'error': f'API request failed with status {response.status_code}: {response.text}'}), 500
+                
+            response_data = response.json()
+            print(f"Hyperbolic API response data: {json.dumps(response_data)}")
+            
+            bot_response = response_data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            if not bot_response:
+                return jsonify({'error': 'Empty response from API'}), 500
+            
+        else:
             # Формируем единый текст с историей сообщений и системным промптом
             full_prompt = SYSTEM_PROMPT + "\n\nИстория сообщений:\n"
             
@@ -164,52 +232,40 @@ def chat():
                 json={
                     "model": MODEL_NAME,
                     "prompt": full_prompt,
-                    "stream": True,
+                    "stream": False,
                     "options": {
                         "num_ctx": 4096,
                         "temperature": 0.7,
                         "top_p": 0.9,
                         "num_predict": 2048
                     }
-                },
-                stream=True
+                }
             )
             
-            accumulated_text = ""
-            for line in response.iter_lines():
-                if line and request_id in active_requests:
-                    try:
-                        json_response = json.loads(line)
-                        if 'response' in json_response:
-                            chunk = json_response['response']
-                            accumulated_text += chunk
-                            yield chunk
-                    except json.JSONDecodeError as e:
-                        print(f"Error decoding JSON: {e}, line: {line}")
-                        continue
-                        
-            # Сохраняем ответ бота с timestamp через секунду после сообщения пользователя
-            if accumulated_text:
-                bot_timestamp = (datetime.fromisoformat(timestamp) + 
-                               timedelta(seconds=1)).isoformat()
-                bot_message = Message(
-                    chat_id=chat.id,
-                    text=accumulated_text,
-                    sender='bot',
-                    timestamp=datetime.fromisoformat(bot_timestamp)
-                )
-                db.add(bot_message)
-                db.commit()
+            if response.status_code != 200:
+                return jsonify({'error': 'API request failed'}), 500
                 
-        except Exception as e:
-            print(f"Error in generate_stream: {e}")
-            yield f"Error: {str(e)}"
+            response_data = response.json()
+            bot_response = response_data.get('response', '')
             
-        finally:
-            if request_id in active_requests:
-                del active_requests[request_id]
-                
-    return Response(stream_with_context(generate_stream()), content_type='text/plain')
+        # Сохраняем ответ бота
+        bot_message = Message(
+            chat_id=chat.id,
+            text=bot_response,
+            sender='bot',
+            timestamp=datetime.utcnow()
+        )
+        db.add(bot_message)
+        db.commit()
+        
+        return jsonify({
+            'chat_id': chat.id,
+            'content': bot_response
+        })
+        
+    except Exception as e:
+        print(f"Error in chat endpoint: {str(e)}")  # Добавляем логирование ошибки
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/stop', methods=['POST'])
 def stop_generation():
@@ -589,6 +645,19 @@ def generate_letter():
             'error': str(e),
             'status': 'error'
         }), 500
+
+@app.route('/api/models', methods=['GET'])
+def get_models():
+    return jsonify({
+        "models": [
+            {
+                "id": model_id,
+                "name": config["name"],
+                "max_tokens": config["max_tokens"]
+            }
+            for model_id, config in AVAILABLE_MODELS.items()
+        ]
+    })
 
 # Запускаем сервер для разработки
 if __name__ == '__main__':
