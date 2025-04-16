@@ -88,8 +88,8 @@
 }
 
 .chat-container {
-  max-width: 38vw;
-  width: 90%;
+  max-width: 100%;
+  width: calc(100% - 300px);
   height: 99vh;
   display: flex;
   flex-direction: column;

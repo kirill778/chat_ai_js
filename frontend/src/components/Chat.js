@@ -768,62 +768,6 @@ const Chat = () => {
         Редактировать
       </button>
 
-      {/* Кнопка для отображения доступных команд */}
-      <button 
-        className="show-commands-button"
-        onClick={() => setShowCommands(!showCommands)}
-        style={{ 
-          position: 'fixed', 
-          bottom: '20px', 
-          right: '20px', 
-          zIndex: 9999,
-          backgroundColor: '#1a73e8',
-          color: 'white',
-          border: 'none',
-          borderRadius: '8px',
-          padding: '10px 16px',
-          fontSize: '14px',
-          fontWeight: '500',
-          boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease'
-        }}
-        onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#0d62c9'}
-        onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#1a73e8'}
-      >
-        {showCommands ? 'Скрыть команды' : 'Показать команды'}
-      </button>
-
-      {/* Отображение доступных команд */}
-      {showCommands && availableCommands.length > 0 && (
-        <div className="available-commands" style={{ 
-          position: 'fixed', 
-          bottom: '70px', 
-          right: '20px', 
-          zIndex: 9999, 
-          background: 'white', 
-          padding: '15px', 
-          border: '1px solid #e0e0e0', 
-          borderRadius: '8px', 
-          maxHeight: '300px', 
-          overflowY: 'auto',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-          width: '300px'
-        }}>
-          <h3 style={{ marginTop: 0, marginBottom: '10px', color: '#1a73e8' }}>Доступные команды:</h3>
-          <ul style={{ paddingLeft: '20px', margin: 0 }}>
-            {availableCommands.map((cmd, index) => (
-              <li key={index} style={{ marginBottom: '8px' }}>
-                <strong style={{ color: '#1a73e8' }}>{cmd.trigger}</strong>: {cmd.description} (тип: {cmd.action_type})
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {/* Модальное окно настроек */}
       {showSettingsModal && (
         <div className="settings-modal">
